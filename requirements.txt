@@ -1,0 +1,15 @@
+# Core libraries
+matplotlib
+pandas
+seaborn
+numpy
+
+# Google Sheets integration
+gspread
+google-auth
+
+# Telegram bot framework
+aiogram>=3.0.0
+
+# PostgreSQL async driver
+asyncpg
