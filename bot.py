@@ -180,29 +180,39 @@ scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/spreadsheets"]
 
 def load_google_credentials(key_file: str, scopes: list):
-    """Load Google credentials from the given key file, from
-    GOOGLE_APPLICATION_CREDENTIALS, or fall back to application default.
-    Raises FileNotFoundError with a helpful message if none found.
     """
-    # 1) Try explicit key file path
+    Load Google credentials from:
+    1. Environment variable GOOGLE_CREDENTIALS (JSON string)
+    2. Explicit key_file path
+    3. Environment variable GOOGLE_APPLICATION_CREDENTIALS
+    4. Application Default Credentials
+    """
+    # 1) Try GOOGLE_CREDENTIALS env var (JSON string)
+    creds_json = os.getenv("GOOGLE_CREDENTIALS")
+    if creds_json:
+        try:
+            creds_info = json.loads(creds_json)
+            return Credentials.from_service_account_info(creds_info, scopes=scopes)
+        except Exception as e:
+            logger.warning(f"Failed to parse GOOGLE_CREDENTIALS JSON: {e}")
+
+    # 2) Try explicit key file path
     if key_file and os.path.exists(key_file):
         return Credentials.from_service_account_file(key_file, scopes=scopes)
 
-    # 2) Try environment variable GOOGLE_APPLICATION_CREDENTIALS
+    # 3) Try GOOGLE_APPLICATION_CREDENTIALS environment variable
     env_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     if env_path and os.path.exists(env_path):
         return Credentials.from_service_account_file(env_path, scopes=scopes)
 
-    # 3) Try Application Default Credentials
+    # 4) Try Application Default Credentials
     try:
         creds, _ = google.auth.default(scopes=scopes)
         return creds
     except Exception as e:
         raise FileNotFoundError(
-            f"Google service account JSON not found at '{key_file}' and "
-            f"'GOOGLE_APPLICATION_CREDENTIALS' not set or file missing. "
-            f"Please download the service account JSON and set the env var "
-            f"`GOOGLE_KEY_FILE` or `GOOGLE_APPLICATION_CREDENTIALS`. Original error: {e}"
+            f"Google service account JSON not found. Please set GOOGLE_CREDENTIALS env var "
+            f"or provide a valid JSON file. Original error: {e}"
         )
 
 
