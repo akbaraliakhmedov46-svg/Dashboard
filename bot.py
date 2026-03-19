@@ -179,99 +179,28 @@ scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive",
          "https://www.googleapis.com/auth/spreadsheets"]
 
-def load_google_credentials(key_file: str, scopes: list):
-    """
-    Load Google credentials from:
-    1. Environment variable GOOGLE_CREDENTIALS (JSON string)
-    2. Explicit key_file path
-    3. Environment variable GOOGLE_APPLICATION_CREDENTIALS
-    4. Application Default Credentials
-    """
-    import time
-    from datetime import datetime, timezone
+import base64
+import json
+import os
+from google.oauth2.service_account import Credentials
 
-# Vaqtni tekshirish
-    now = datetime.now(timezone.utc).isoformat()
-    timestamp = time.time()
-    logger.info(f"🕐 System time (UTC): {now}")
-    logger.info(f"🕐 Timestamp: {timestamp}")
+def load_google_credentials(scopes):
+    """Google credentials ni faqat base64 kodlangan JSON dan yuklaydi"""
+    base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+    if not base64_creds:
+        raise ValueError("GOOGLE_CREDENTIALS_BASE64 environment variable is not set")
     
-    # 1) Try GOOGLE_CREDENTIALS env var (JSON string)
-    creds_json = os.getenv("GOOGLE_CREDENTIALS")
-    if creds_json:
-        try:
-            creds_info = json.loads(creds_json)
-            return Credentials.from_service_account_info(creds_info, scopes=scopes)
-        except Exception as e:
-            logger.warning(f"Failed to parse GOOGLE_CREDENTIALS JSON: {e}")
-
-    # 2) Try explicit key file path
-    if key_file and os.path.exists(key_file):
-        return Credentials.from_service_account_file(key_file, scopes=scopes)
-
-    # 3) Try GOOGLE_APPLICATION_CREDENTIALS environment variable
-    env_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-    if env_path and os.path.exists(env_path):
-        return Credentials.from_service_account_file(env_path, scopes=scopes)
-
-    # 4) Try Application Default Credentials
     try:
-        creds, _ = google.auth.default(scopes=scopes)
-        return creds
+        json_str = base64.b64decode(base64_creds).decode('utf-8')
+        creds_info = json.loads(json_str)
+        logger.info(f"✅ Base64 credentials yuklandi, email: {creds_info.get('client_email')}")
+        # Private_key ni tekshirish (logga chiqarish)
+        pk = creds_info.get('private_key', '')
+        logger.info(f"🔑 private_key uzunligi: {len(pk)}, boshi: {pk[:50]}...")
+        return Credentials.from_service_account_info(creds_info, scopes=scopes)
     except Exception as e:
-        raise FileNotFoundError(
-            f"Google service account JSON not found. Please set GOOGLE_CREDENTIALS env var "
-            f"or provide a valid JSON file. Original error: {e}"
-        )
-
-
-creds = load_google_credentials(GOOGLE_KEY_FILE, scope)
-# Create a requests.Session with retries and a default timeout and use it
-# for credential refresh so token requests use retries and timeouts.
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from google.auth.transport.requests import Request as GoogleRequest
-
-def _make_retry_session(timeout: int = 20, max_retries: int = 5, backoff_factor: float = 1.0):
-    s = requests.Session()
-    retries = Retry(
-        total=max_retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset(["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
-    )
-    adapter = HTTPAdapter(max_retries=retries)
-    s.mount("https://", adapter)
-    s.mount("http://", adapter)
-
-    # Wrap request to enforce a default timeout when none provided
-    orig_request = s.request
-    def _request_with_timeout(method, url, **kwargs):
-        if 'timeout' not in kwargs:
-            kwargs['timeout'] = timeout
-        return orig_request(method, url, **kwargs)
-
-    s.request = _request_with_timeout
-    return s
-
-
-# Build session from env or defaults
-_retry_timeout = int(os.getenv("GOOGLE_HTTP_TIMEOUT", "20"))
-_retry_count = int(os.getenv("GOOGLE_HTTP_RETRIES", "5"))
-_backoff = float(os.getenv("GOOGLE_BACKOFF_FACTOR", "1"))
-_retry_session = _make_retry_session(timeout=_retry_timeout, max_retries=_retry_count, backoff_factor=_backoff)
-_google_request = GoogleRequest(session=_retry_session)
-
-# Try to refresh credentials now (this will use the retrying session). If it
-# fails we'll log a warning — further API calls will still attempt refreshes
-# but this pre-check helps fail fast and clarifies network/proxy issues.
-try:
-    creds.refresh(_google_request)
-except Exception as e:
-    logger.warning(f"Google credential refresh failed (will retry on use): {e}")
-
-gc = gspread.authorize(creds)
+        logger.error(f"❌ Credentials yuklashda xato: {e}")
+        raise
 
 # Robustly open the spreadsheet with retries and exponential backoff
 def open_spreadsheet_with_retries(client, key, max_attempts=4, base_wait=2):
