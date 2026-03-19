@@ -182,7 +182,6 @@ scope = ["https://spreadsheets.google.com/feeds",
 import base64
 import json
 import os
-from google.oauth2.service_account import Credentials
 
 def load_google_credentials(scopes):
     """Google credentials ni faqat base64 kodlangan JSON dan yuklaydi"""
@@ -194,37 +193,59 @@ def load_google_credentials(scopes):
         json_str = base64.b64decode(base64_creds).decode('utf-8')
         creds_info = json.loads(json_str)
         logger.info(f"✅ Base64 credentials yuklandi, email: {creds_info.get('client_email')}")
-        # Private_key ni tekshirish (logga chiqarish)
-        pk = creds_info.get('private_key', '')
-        logger.info(f"🔑 private_key uzunligi: {len(pk)}, boshi: {pk[:50]}...")
         return Credentials.from_service_account_info(creds_info, scopes=scopes)
     except Exception as e:
         logger.error(f"❌ Credentials yuklashda xato: {e}")
         raise
 
-# Robustly open the spreadsheet with retries and exponential backoff
-def open_spreadsheet_with_retries(client, key, max_attempts=4, base_wait=2):
-    last_exc = None
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # Call client.open_by_key directly; safe_sheets_call is defined later
-            doc = client.open_by_key(key)
-            logger.info(f"✅ Google Sheets га уланди: {doc.title}")
-            return doc
-        except Exception as e:
-            last_exc = e
-            wait = base_wait * (2 ** (attempt - 1))
-            logger.warning(f"⚠️ Google Sheets connection attempt {attempt}/{max_attempts} failed: {e}. Retrying in {wait}s...")
-            time.sleep(wait)
-            try:
-                # Recreate client in case credentials/session needs refreshing
-                client = gspread.authorize(creds)
-            except Exception:
-                pass
 
-    logger.error(f"❌ Google Sheets га уланиб бўлмади: {last_exc}")
-    raise last_exc
 
+creds = load_google_credentials(scope)
+
+# Google auth transport sozlamalari (retry va timeout)
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from google.auth.transport.requests import Request as GoogleRequest
+
+def _make_retry_session(timeout: int = 20, max_retries: int = 5, backoff_factor: float = 1.0):
+    s = requests.Session()
+    retries = Retry(
+        total=max_retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]),
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+
+    orig_request = s.request
+    def _request_with_timeout(method, url, **kwargs):
+        if 'timeout' not in kwargs:
+            kwargs['timeout'] = timeout
+        return orig_request(method, url, **kwargs)
+
+    s.request = _request_with_timeout
+    return s
+
+_retry_timeout = int(os.getenv("GOOGLE_HTTP_TIMEOUT", "20"))
+_retry_count = int(os.getenv("GOOGLE_HTTP_RETRIES", "5"))
+_backoff = float(os.getenv("GOOGLE_BACKOFF_FACTOR", "1"))
+_retry_session = _make_retry_session(timeout=_retry_timeout, max_retries=_retry_count, backoff_factor=_backoff)
+_google_request = GoogleRequest(session=_retry_session)
+
+# Credentials ni refresh qilish (ixtiyoriy)
+try:
+    creds.refresh(_google_request)
+except Exception as e:
+    logger.warning(f"Google credential refresh failed (will retry on use): {e}")
+
+# Gspread client yaratish
+import gspread
+gc = gspread.authorize(creds)
+
+# Spreadsheet ni ochish
 doc = open_spreadsheet_with_retries(gc, SPREADSHEET_ID)
 
 try:
