@@ -187,6 +187,15 @@ def load_google_credentials(key_file: str, scopes: list):
     3. Environment variable GOOGLE_APPLICATION_CREDENTIALS
     4. Application Default Credentials
     """
+    import time
+    from datetime import datetime, timezone
+
+# Vaqtni tekshirish
+    now = datetime.now(timezone.utc).isoformat()
+    timestamp = time.time()
+    logger.info(f"🕐 System time (UTC): {now}")
+    logger.info(f"🕐 Timestamp: {timestamp}")
+    
     # 1) Try GOOGLE_CREDENTIALS env var (JSON string)
     creds_json = os.getenv("GOOGLE_CREDENTIALS")
     if creds_json:
