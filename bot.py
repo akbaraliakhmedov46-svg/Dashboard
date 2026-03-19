@@ -179,24 +179,61 @@ scope = ["https://spreadsheets.google.com/feeds",
          "https://www.googleapis.com/auth/drive",
          "https://www.googleapis.com/auth/spreadsheets"]
 
-import base64
-import json
-import os
-
 def load_google_credentials(scopes):
-    """Google credentials ni faqat base64 kodlangan JSON dan yuklaydi"""
+    """Google credentials ni quyidagi tartibda yuklaydi:
+       1. GOOGLE_CREDENTIALS_BASE64 (base64 kodlangan JSON)
+       2. GOOGLE_CREDENTIALS (raw JSON matni)
+       3. GOOGLE_KEY_FILE (fayl yo'li)
+       4. GOOGLE_APPLICATION_CREDENTIALS (fayl yo'li)
+       5. Application Default Credentials
+    """
+    import base64, json, os
+    from google.oauth2.service_account import Credentials
+
+    # 1) Base64
     base64_creds = os.getenv("GOOGLE_CREDENTIALS_BASE64")
-    if not base64_creds:
-        raise ValueError("GOOGLE_CREDENTIALS_BASE64 environment variable is not set")
-    
+    if base64_creds:
+        try:
+            json_str = base64.b64decode(base64_creds).decode('utf-8')
+            creds_info = json.loads(json_str)
+            logger.info("✅ Base64 credentials yuklandi")
+            return Credentials.from_service_account_info(creds_info, scopes=scopes)
+        except Exception as e:
+            logger.warning(f"Base64 credentials yuklashda xato: {e}")
+
+    # 2) Raw JSON
+    raw_json = os.getenv("GOOGLE_CREDENTIALS")
+    if raw_json:
+        try:
+            creds_info = json.loads(raw_json)
+            logger.info("✅ GOOGLE_CREDENTIALS (raw JSON) yuklandi")
+            return Credentials.from_service_account_info(creds_info, scopes=scopes)
+        except Exception as e:
+            logger.warning(f"Raw JSON yuklashda xato: {e}")
+
+    # 3) GOOGLE_KEY_FILE
+    key_file = os.getenv("GOOGLE_KEY_FILE")
+    if key_file and os.path.exists(key_file):
+        logger.info(f"✅ Fayldan yuklanmoqda: {key_file}")
+        return Credentials.from_service_account_file(key_file, scopes=scopes)
+
+    # 4) GOOGLE_APPLICATION_CREDENTIALS
+    env_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    if env_path and os.path.exists(env_path):
+        logger.info(f"✅ Env fayldan yuklanmoqda: {env_path}")
+        return Credentials.from_service_account_file(env_path, scopes=scopes)
+
+    # 5) Application Default Credentials
     try:
-        json_str = base64.b64decode(base64_creds).decode('utf-8')
-        creds_info = json.loads(json_str)
-        logger.info(f"✅ Base64 credentials yuklandi, email: {creds_info.get('client_email')}")
-        return Credentials.from_service_account_info(creds_info, scopes=scopes)
+        import google.auth
+        creds, _ = google.auth.default(scopes=scopes)
+        logger.info("✅ Application Default Credentials yuklandi")
+        return creds
     except Exception as e:
-        logger.error(f"❌ Credentials yuklashda xato: {e}")
-        raise
+        raise ValueError(
+            "Google credentials topilmadi. Iltimos, GOOGLE_CREDENTIALS_BASE64, "
+            "GOOGLE_CREDENTIALS yoki fayl yo‘lini o‘rnating."
+        ) from e
 
 
 
