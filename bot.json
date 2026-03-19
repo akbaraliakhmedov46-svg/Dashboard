@@ -1,0 +1,1584 @@
+{
+  "bot_implementation": {
+    "metadata": {
+      "name": "Production Management Bot",
+      "version": "1.0.0",
+      "created": "2024-12-20",
+      "description": "Complete Telegram bot for production management with Google Sheets integration"
+    },
+    
+    "complete_structure": {
+      "file_structure": {
+        "main_file": "bot.py",
+        "config_file": ".env",
+        "credentials": "google-service-account.json",
+        "requirements": "requirements.txt"
+      },
+      
+      "imports": [
+        "asyncio",
+        "datetime",
+        "random", 
+        "zoneinfo",
+        "calendar",
+        "math",
+        "re",
+        "logging",
+        "os",
+        "typing",
+        "matplotlib.pyplot",
+        "pandas",
+        "io.BytesIO",
+        "seaborn",
+        "numpy",
+        "matplotlib.gridspec",
+        "gspread",
+        "google.oauth2.service_account.Credentials",
+        "aiogram.Bot",
+        "aiogram.Dispatcher",
+        "aiogram.F",
+        "aiogram.filters.Command",
+        "aiogram.types.Message",
+        "aiogram.types.CallbackQuery",
+        "aiogram.types.InlineKeyboardMarkup",
+        "aiogram.types.InlineKeyboardButton",
+        "aiogram.types.ReplyKeyboardMarkup",
+        "aiogram.types.KeyboardButton",
+        "aiogram.types.BufferedInputFile",
+        "aiogram.fsm.context.FSMContext",
+        "aiogram.fsm.state.State",
+        "aiogram.fsm.state.StatesGroup",
+        "aiogram.fsm.storage.memory.MemoryStorage",
+        "json",
+        "aiogram.types.WebAppInfo",
+        "time",
+        "functools.wraps",
+        "threading"
+      ],
+      
+      "logging_config": {
+        "level": "INFO",
+        "format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+      }
+    },
+    
+    "configuration_complete": {
+      "environment_variables": {
+        "BOT_TOKEN": "7980938543:AAHv4sFMsI8RH5Ialm05p7mDDQSRBRSB0Ig",
+        "GOOGLE_KEY_FILE": "eastern-clock-469408-n2-800ab6e6fd76.json",
+        "SPREADSHEET_ID": "142jCderpzFBwHqJJjbDQW633XXh8UC4o-iZkjhheVWs",
+        "REPORT_SHEET_NAME": "Иш режаси",
+        "REPORT_SHEET_MONTH": "Ойлик хисобот",
+        "ORDERS_SHEET_NAME": "Буюртмалар",
+        "TIMEZONE": "Asia/Tashkent",
+        "WORKING_DAYS_IN_MONTH": "26",
+        "ADMIN_ID": "1453431600",
+        "GROUP_ID": "-1003084892237",
+        "ORDERS_TOPIC_ID": "284",
+        "PRODUCTION_TOPIC_ID": "27",
+        "RECOGNITION_TOPIC_ID": "32",
+        "LOW_PERCENT_TOPIC_ID": "96"
+      },
+      
+      "hardcoded_constants": {
+        "SCOPE": [
+          "https://spreadsheets.google.com/feeds",
+          "https://www.googleapis.com/auth/drive",
+          "https://www.googleapis.com/auth/spreadsheets"
+        ],
+        "SECTION_MONTHLY_PLANS": {
+          "Бичиш": 70000,
+          "Тасниф": 65000,
+          "Тикув": 60000,
+          "Қадоқлаш": 57000
+        },
+        "SECTION_EMOJIS": {
+          "бичиш": "✂️",
+          "тасниф": "📑",
+          "тикув": "🧵",
+          "қадоқлаш": "📦"
+        },
+        "SECTION_NAMES_RU": {
+          "бичиш": "Бичиш",
+          "тасниф": "Тасниф",
+          "тикув": "Тикув",
+          "қадоқлаш": "Қадоқлаш"
+        },
+        "SECTION_NAMES_UZ": {
+          "бичиш": "Бичиш",
+          "тасниф": "Тасниф",
+          "тикув": "Тикув",
+          "қадоқлаш": "Қадоқлаш"
+        }
+      }
+    },
+    
+    "classes_and_states": {
+      "rate_limiter_class": {
+        "name": "RateLimiter",
+        "description": "API rate limiting decorator",
+        "methods": ["__init__", "__call__"],
+        "parameters": {
+          "__init__": ["max_calls", "period"],
+          "__call__": ["func"]
+        }
+      },
+      
+      "data_cache_class": {
+        "name": "DataCache",
+        "description": "Data caching mechanism with TTL",
+        "methods": ["__init__", "get", "set", "clear", "cleanup"],
+        "parameters": {
+          "__init__": ["ttl=300"],
+          "get": ["key"],
+          "set": ["key", "value"],
+          "clear": [],
+          "cleanup": []
+        }
+      },
+      
+      "states_groups": {
+        "SectionStates": {
+          "description": "States for section daily work input",
+          "states": [
+            "ish_soni",
+            "hodim_soni", 
+            "pechat",
+            "vishivka",
+            "dikimga",
+            "tikuv_ish",
+            "tikuv_hodim",
+            "oyoqchi_hodim",
+            "qadoqlash_ish",
+            "qadoqlash_hodim",
+            "comment"
+          ]
+        },
+        
+        "OrderStates": {
+          "description": "States for order management",
+          "states": [
+            "waiting_for_name",
+            "waiting_for_quantity",
+            "waiting_for_date",
+            "waiting_for_deadline", 
+            "waiting_for_section",
+            "edit_order_name",
+            "edit_order_quantity",
+            "edit_order_done",
+            "edit_order_deadline",
+            "edit_order_section"
+          ]
+        },
+        
+        "DailyWorkStates": {
+          "description": "States for daily work by orders",
+          "states": [
+            "waiting_for_section",
+            "waiting_for_order",
+            "waiting_for_quantity"
+          ]
+        },
+        
+        "WorkflowStates": {
+          "description": "States for workflow management",
+          "states": [
+            "waiting_for_section",
+            "waiting_for_order",
+            "waiting_for_quantity",
+            "waiting_for_workflow_section"
+          ]
+        },
+        
+        "AdminStates": {
+          "description": "States for admin configuration",
+          "states": [
+            "waiting_for_workdays",
+            "waiting_for_monthly_plan",
+            "waiting_for_monthly_plan_section"
+          ]
+        },
+        
+        "AdminEditByDateStates": {
+          "description": "States for admin editing by date",
+          "states": [
+            "waiting_for_date",
+            "waiting_for_section",
+            "waiting_for_field",
+            "waiting_for_new_value"
+          ]
+        },
+        
+        "AdminSectionEditStates": {
+          "description": "States for bulk section editing",
+          "states": [
+            "waiting_for_section",
+            "waiting_for_date_range",
+            "waiting_for_field",
+            "waiting_for_bulk_value"
+          ]
+        },
+        
+        "AdminSystemSettingsStates": {
+          "description": "States for system settings",
+          "states": [
+            "waiting_for_setting",
+            "waiting_for_new_value"
+          ]
+        },
+        
+        "AdminOrderManagementStates": {
+          "description": "States for order management by admin",
+          "states": [
+            "waiting_for_order_action",
+            "waiting_for_order_selection",
+            "waiting_for_bulk_edit"
+          ]
+        },
+        
+        "AdminEditCommentStates": {
+          "description": "States for comment editing",
+          "states": [
+            "waiting_for_comment"
+          ]
+        },
+        
+        "AdminBroadcastStates": {
+          "description": "States for broadcast messages",
+          "states": [
+            "waiting_for_broadcast_type",
+            "waiting_for_birthday_name",
+            "waiting_for_birthday_section",
+            "waiting_for_leaderboard_date"
+          ]
+        }
+      }
+    },
+    
+    "functions_complete": {
+      "utility_functions": {
+        "is_admin": {
+          "description": "Check if user is admin",
+          "parameters": ["user_id"],
+          "returns": "boolean",
+          "logic": "return user_id == ADMIN_ID"
+        },
+        
+        "parse_float": {
+          "description": "Parse string to float with comma handling",
+          "parameters": ["s"],
+          "returns": "float",
+          "logic": "Clean string, handle commas, convert to float"
+        },
+        
+        "parse_int": {
+          "description": "Parse string to integer",
+          "parameters": ["s"],
+          "returns": "integer",
+          "logic": "Clean string, convert to int"
+        },
+        
+        "today_date_str": {
+          "description": "Get today's date as string",
+          "parameters": [],
+          "returns": "string (DD.MM.YYYY)",
+          "logic": "Get current date in TZ, format as string"
+        },
+        
+        "get_week_start_end_dates": {
+          "description": "Get start and end dates of current week",
+          "parameters": [],
+          "returns": ["start_date (string)", "end_date (string)"],
+          "logic": "Calculate Monday and Sunday of current week"
+        },
+        
+        "get_week_number": {
+          "description": "Get current week number",
+          "parameters": [],
+          "returns": "integer",
+          "logic": "Get ISO week number"
+        },
+        
+        "get_working_days_in_current_month": {
+          "description": "Calculate working days in current month",
+          "parameters": [],
+          "returns": "integer",
+          "logic": "Count days from 1st to last day of month, excluding Sundays"
+        },
+        
+        "get_current_workday_index": {
+          "description": "Get number of workdays passed in current month",
+          "parameters": [],
+          "returns": "integer",
+          "logic": "Count workdays from 1st to today"
+        },
+        
+        "get_remaining_workdays": {
+          "description": "Get remaining workdays in month",
+          "parameters": [],
+          "returns": "integer",
+          "logic": "Count workdays from tomorrow to end of month"
+        },
+        
+        "get_month_name": {
+          "description": "Get current month name in Uzbek",
+          "parameters": [],
+          "returns": "string",
+          "logic": "Map month number to Uzbek name"
+        },
+        
+        "calculate_percentage": {
+          "description": "Calculate percentage (unbounded)",
+          "parameters": ["part", "whole"],
+          "returns": "float",
+          "logic": "(part / whole) * 100"
+        },
+        
+        "calculate_bounded_percentage": {
+          "description": "Calculate percentage bounded 0-100%",
+          "parameters": ["part", "whole"],
+          "returns": "float",
+          "logic": "max(0, min(100, (part / whole) * 100))"
+        },
+        
+        "safe_val": {
+          "description": "Safely get value from row with index",
+          "parameters": ["row", "idx"],
+          "returns": "integer",
+          "logic": "Return parsed int if index exists, else 0"
+        },
+        
+        "validate_order_data": {
+          "description": "Validate order input data",
+          "parameters": ["order_name", "quantity", "deadline"],
+          "returns": ["error_messages (list)"],
+          "logic": "Check name length, positive quantity, future deadline"
+        },
+        
+        "format_order_message": {
+          "description": "Format order message for notifications",
+          "parameters": ["order_name", "total", "done", "deadline", "days_left", "section", "action"],
+          "returns": "string",
+          "logic": "Create formatted message with emojis"
+        }
+      },
+      
+      "google_sheets_functions": {
+        "find_today_row": {
+          "description": "Find row index for today's date",
+          "parameters": ["sheet"],
+          "returns": "integer",
+          "logic": "Search column A for today's date string"
+        },
+        
+        "find_week_rows": {
+          "description": "Find rows for current week",
+          "parameters": ["sheet"],
+          "returns": ["row_indices (list)"],
+          "logic": "Find rows with dates in current week"
+        },
+        
+        "append_or_update": {
+          "description": "Append new row or update existing",
+          "parameters": ["sheet", "values_by_index (dict)"],
+          "returns": "void",
+          "logic": "Check if row exists, update or append"
+        },
+        
+        "update_monthly_totals": {
+          "description": "Update monthly totals in sheet",
+          "parameters": ["section_name", "daily_value"],
+          "returns": ["congratulations_message (string) or null"],
+          "logic": "Find section row, update totals, calculate percentages"
+        },
+        
+        "get_monthly_data": {
+          "description": "Get monthly data from sheet (cached)",
+          "parameters": [],
+          "returns": "dictionary",
+          "logic": "Read sheet, parse data, cache results"
+        },
+        
+        "calculate_section_performance": {
+          "description": "Calculate performance metrics for section",
+          "parameters": ["section_name", "daily_value", "monthly_plan_dict"],
+          "returns": "dictionary of metrics",
+          "logic": "Calculate daily/monthly percentages, projections"
+        },
+        
+        "get_orders_data": {
+          "description": "Get orders data from sheet",
+          "parameters": [],
+          "returns": ["orders (list of dicts)"],
+          "logic": "Read orders sheet, parse each row"
+        },
+        
+        "get_workflow_orders_data": {
+          "description": "Get workflow orders with stage data",
+          "parameters": [],
+          "returns": ["orders (list of dicts)"],
+          "logic": "Read orders sheet with workflow columns"
+        },
+        
+        "update_workflow_order": {
+          "description": "Update workflow order stage",
+          "parameters": ["row_index", "stage", "quantity"],
+          "returns": "boolean (success)",
+          "logic": "Update stage column, recalculate totals"
+        },
+        
+        "safe_sheets_call": {
+          "description": "Safe Google Sheets API call with retries",
+          "parameters": ["callable_func", "args", "max_retries=3", "kwargs"],
+          "returns": "API response",
+          "logic": "Try with rate limiting and error handling"
+        },
+        
+        "get_orders_by_section": {
+          "description": "Get orders filtered by section",
+          "parameters": ["section_name"],
+          "returns": ["filtered_orders (list)"],
+          "logic": "Filter orders by section name"
+        },
+        
+        "update_sheet_data": {
+          "description": "Update specific cell in sheet",
+          "parameters": ["date_str", "section", "field_index", "new_value"],
+          "returns": "boolean (success)",
+          "logic": "Find row by date, update cell"
+        },
+        
+        "bulk_update_sheet_data": {
+          "description": "Bulk update sheet data for date range",
+          "parameters": ["start_date_str", "end_date_str", "section", "field_index", "value"],
+          "returns": "integer (updated_count)",
+          "logic": "Update all rows in date range"
+        },
+        
+        "update_order_in_sheet": {
+          "description": "Update order in orders sheet",
+          "parameters": ["row_index", "field", "value"],
+          "returns": "boolean (success)",
+          "logic": "Update specific field, recalculate percentages"
+        },
+        
+        "get_comment_by_date": {
+          "description": "Get comment for specific date",
+          "parameters": ["date_str"],
+          "returns": "string (comment)",
+          "logic": "Find row, return comment column"
+        },
+        
+        "update_sheet_comment": {
+          "description": "Update comment for date",
+          "parameters": ["date_str", "new_comment"],
+          "returns": "boolean (success)",
+          "logic": "Find row, update comment column"
+        }
+      },
+      
+      "report_functions": {
+        "format_daily_report": {
+          "description": "Format daily report message",
+          "parameters": [],
+          "returns": "string (formatted report)",
+          "logic": "Get today's data, calculate metrics, format with emojis"
+        },
+        
+        "format_weekly_report": {
+          "description": "Format weekly report message",
+          "parameters": [],
+          "returns": "string (formatted report)",
+          "logic": "Aggregate weekly data, calculate metrics"
+        },
+        
+        "format_monthly_report": {
+          "description": "Format monthly report message",
+          "parameters": [],
+          "returns": "string (formatted report)",
+          "logic": "Get monthly data, format with congratulations"
+        },
+        
+        "format_orders_report": {
+          "description": "Format orders report",
+          "parameters": ["only_active=true"],
+          "returns": ["reports (list of strings)"],
+          "logic": "Format orders list, split if too long"
+        },
+        
+        "format_workflow_report": {
+          "description": "Format workflow report",
+          "parameters": [],
+          "returns": ["reports (list of strings)"],
+          "logic": "Format workflow orders with stage progress"
+        }
+      },
+      
+      "chart_functions": {
+        "create_percentage_pie_chart": {
+          "description": "Create percentage pie chart",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create pie chart with section percentages"
+        },
+        
+        "create_weekly_trend_chart": {
+          "description": "Create weekly trend chart",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create line/bar chart for weekly data"
+        },
+        
+        "create_monthly_trend_chart": {
+          "description": "Create monthly trend chart",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create line/bar chart for monthly data"
+        },
+        
+        "create_four_pie_charts": {
+          "description": "Create 4 pie charts for sections",
+          "parameters": ["axes", "monthly_data"],
+          "returns": "void",
+          "logic": "Create individual pie charts for each section"
+        },
+        
+        "create_production_dashboard": {
+          "description": "Create comprehensive production dashboard",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create multi-panel dashboard with calendar, charts, stats"
+        },
+        
+        "create_enhanced_workdays_calendar": {
+          "description": "Create enhanced workdays calendar",
+          "parameters": ["ax", "monthly_data"],
+          "returns": "void",
+          "logic": "Create table with daily work and percentages"
+        },
+        
+        "create_enhanced_trend_chart": {
+          "description": "Create enhanced trend chart",
+          "parameters": ["ax"],
+          "returns": "void",
+          "logic": "Create trend chart with monthly percentages"
+        },
+        
+        "create_empty_dashboard": {
+          "description": "Create empty dashboard placeholder",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create simple error message image"
+        },
+        
+        "create_section_visualization": {
+          "description": "Create section visualization",
+          "parameters": ["section_name"],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create 4-panel visualization for specific section"
+        },
+        
+        "create_comprehensive_dashboard": {
+          "description": "Create comprehensive dashboard",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create dashboard with all sections"
+        },
+        
+        "create_optimized_dashboard": {
+          "description": "Create optimized dashboard",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create simple dashboard with caching"
+        },
+        
+        "create_simple_trend_chart": {
+          "description": "Create simple trend chart",
+          "parameters": [],
+          "returns": "BytesIO buffer (image)",
+          "logic": "Create simple bar chart for last 5 days"
+        }
+      },
+      
+      "broadcast_functions": {
+        "generate_daily_leaderboard": {
+          "description": "Generate daily leaderboard message",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Calculate rankings, format with emojis"
+        },
+        
+        "generate_low_performance_alert": {
+          "description": "Generate low performance alert",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Identify sections below 50%, format alert"
+        },
+        
+        "generate_daily_comparison": {
+          "description": "Generate daily comparison",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Compare today vs yesterday, format changes"
+        },
+        
+        "generate_weekly_summary": {
+          "description": "Generate weekly summary",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Summarize week, highlight best/worst"
+        },
+        
+        "generate_progress_bar": {
+          "description": "Generate progress bar message",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Create text-based progress bars"
+        },
+        
+        "generate_birthday_congrats": {
+          "description": "Generate birthday congratulations",
+          "parameters": ["name", "section"],
+          "returns": "string (formatted message)",
+          "logic": "Format birthday message with random wishes"
+        },
+        
+        "generate_admin_statistics": {
+          "description": "Generate admin statistics",
+          "parameters": [],
+          "returns": "string (formatted message)",
+          "logic": "Calculate and format admin stats"
+        }
+      }
+    },
+    
+    "telegram_handlers_complete": {
+      "command_handlers": {
+        "/start": {
+          "handler": "start_cmd",
+          "description": "Start command handler",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Log command",
+            "Create keyboard with WebApp button",
+            "Send welcome message",
+            "Show main menu"
+          ]
+        },
+        
+        "/hisobot": {
+          "handler": "hisobot_cmd",
+          "description": "Reports command (admin only)",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Show reports menu"
+          ]
+        },
+        
+        "/buyurtmalar": {
+          "handler": "buyurtmalar_cmd",
+          "description": "Orders command (admin only)",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Show orders menu"
+          ]
+        },
+        
+        "/kunlik_ish": {
+          "handler": "kunlik_ish_cmd",
+          "description": "Daily work command",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Show sections keyboard"
+          ]
+        },
+        
+        "/grafik": {
+          "handler": "grafik_cmd",
+          "description": "Graph reports command",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Show graph reports menu"
+          ]
+        },
+        
+        "/admin": {
+          "handler": "admin_cmd",
+          "description": "Admin panel command",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Show admin menu"
+          ]
+        },
+        
+        "/send_report": {
+          "handler": "cmd_send_report",
+          "description": "Send report command",
+          "parameters": ["message: Message", "state: FSMContext"],
+          "actions": [
+            "Check admin permission",
+            "Show broadcast type keyboard",
+            "Set broadcast state"
+          ]
+        },
+        
+        "/cancel": {
+          "handler": "cmd_cancel",
+          "description": "Cancel command",
+          "parameters": ["message: Message", "state: FSMContext"],
+          "actions": [
+            "Clear current state",
+            "Return to main menu"
+          ]
+        },
+        
+        "/clear_cache": {
+          "handler": "clear_cache_cmd",
+          "description": "Clear cache command (admin)",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Clear data cache",
+            "Send confirmation"
+          ]
+        },
+        
+        "/api_status": {
+          "handler": "api_status_cmd",
+          "description": "API status command (admin)",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Show API status"
+          ]
+        },
+        
+        "/admin_help": {
+          "handler": "cmd_admin_help",
+          "description": "Admin help command",
+          "parameters": ["message: Message"],
+          "actions": [
+            "Check admin permission",
+            "Send help text"
+          ]
+        }
+      },
+      
+      "callback_query_handlers": {
+        "main_menu_navigation": {
+          "daily_work": {
+            "handler": "cb_daily_work",
+            "actions": ["Show sections keyboard for daily work"]
+          },
+          "daily_work_orders": {
+            "handler": "cb_daily_work_orders",
+            "actions": ["Show sections keyboard for order-based work"]
+          },
+          "orders_menu": {
+            "handler": "cb_orders_menu",
+            "actions": ["Show orders menu"]
+          },
+          "reports_menu": {
+            "handler": "cb_reports_menu",
+            "actions": ["Show reports menu"]
+          },
+          "graph_reports": {
+            "handler": "cb_graph_reports",
+            "actions": ["Show graph reports menu"]
+          },
+          "back_main": {
+            "handler": "cb_back_main",
+            "actions": ["Return to main menu"]
+          },
+          "back_ord": {
+            "handler": "cb_back_ord",
+            "actions": ["Return to orders menu"]
+          },
+          "back_daily": {
+            "handler": "cb_back_daily",
+            "actions": ["Return to daily work menu"]
+          },
+          "back_workflow": {
+            "handler": "cb_back_workflow",
+            "actions": ["Return to workflow menu"]
+          }
+        },
+        
+        "section_selection": {
+          "sec_bich": {
+            "handler": "cb_bichish",
+            "actions": [
+              "Set section to bichish",
+              "Ask for work quantity",
+              "Set state to ish_soni"
+            ]
+          },
+          "sec_tasn": {
+            "handler": "cb_tasnif",
+            "actions": [
+              "Set section to tasnif",
+              "Ask for work quantity",
+              "Set state to ish_soni"
+            ]
+          },
+          "sec_tik": {
+            "handler": "cb_tikuv",
+            "actions": [
+              "Set section to tikuv",
+              "Ask for work quantity",
+              "Set state to tikuv_ish"
+            ]
+          },
+          "sec_qad": {
+            "handler": "cb_qadoqlash",
+            "actions": [
+              "Set section to qadoqlash",
+              "Ask for work quantity",
+              "Set state to ish_soni"
+            ]
+          }
+        },
+        
+        "report_handlers": {
+          "r_kun": {
+            "handler": "cb_daily_report",
+            "actions": ["Generate and send daily report"]
+          },
+          "r_haf": {
+            "handler": "cb_weekly_report",
+            "actions": ["Generate and send weekly report"]
+          },
+          "r_oy": {
+            "handler": "cb_monthly_report",
+            "actions": ["Generate and send monthly report"]
+          },
+          "r_ord": {
+            "handler": "cb_orders_report",
+            "actions": ["Generate and send orders report"]
+          },
+          "r_workflow": {
+            "handler": "cb_workflow_report",
+            "actions": ["Generate and send workflow report"]
+          }
+        },
+        
+        "graph_handlers": {
+          "g_mon": {
+            "handler": "cb_monthly_graph",
+            "actions": ["Create and send monthly trend chart"]
+          },
+          "g_day": {
+            "handler": "cb_daily_graph",
+            "actions": ["Create and send daily graph"]
+          },
+          "g_week": {
+            "handler": "cb_weekly_trend",
+            "actions": ["Create and send weekly trend chart"]
+          },
+          "g_month": {
+            "handler": "cb_monthly_trend",
+            "actions": ["Create and send monthly trend chart"]
+          },
+          "g_pie": {
+            "handler": "cb_pie_chart",
+            "actions": ["Create and send percentage pie chart"]
+          },
+          "production_dashboard": {
+            "handler": "cb_production_dashboard",
+            "actions": ["Create and send production dashboard"]
+          },
+          "vis_bich": {
+            "handler": "cb_bichish_visual",
+            "actions": ["Create and send bichish visualization"]
+          },
+          "vis_tasn": {
+            "handler": "cb_tasnif_visual",
+            "actions": ["Create and send tasnif visualization"]
+          },
+          "vis_tik": {
+            "handler": "cb_tikuv_visual",
+            "actions": ["Create and send tikuv visualization"]
+          },
+          "vis_qad": {
+            "handler": "cb_qadoqlash_visual",
+            "actions": ["Create and send qadoqlash visualization"]
+          },
+          "vis_all": {
+            "handler": "cb_all_sections_visual",
+            "actions": ["Create and send all sections dashboard"]
+          }
+        },
+        
+        "admin_handlers": {
+          "admin_edit_by_date": {
+            "handler": "cb_admin_edit_by_date",
+            "actions": ["Ask for date to edit", "Set waiting_for_date state"]
+          },
+          "admin_edit_section_data": {
+            "handler": "cb_admin_edit_section_data",
+            "actions": ["Show bulk edit sections menu"]
+          },
+          "admin_manage_orders": {
+            "handler": "cb_admin_manage_orders",
+            "actions": ["Show order management menu with stats"]
+          },
+          "admin_monthly_plans": {
+            "handler": "cb_admin_monthly_plans",
+            "actions": ["Show monthly plans management"]
+          },
+          "admin_system_settings": {
+            "handler": "cb_admin_system_settings",
+            "actions": ["Show system settings with current values"]
+          },
+          "admin_statistics": {
+            "handler": "cb_admin_statistics",
+            "actions": ["Show admin statistics menu"]
+          },
+          "admin_restart": {
+            "handler": "cb_admin_restart",
+            "actions": ["Restart bot (not implemented)"]
+          },
+          "admin_back": {
+            "handler": "cb_admin_back",
+            "actions": ["Return to admin menu"]
+          }
+        },
+        
+        "order_handlers": {
+          "ord_list": {
+            "handler": "cb_order_list",
+            "actions": ["Show list of orders with keyboard"]
+          },
+          "add_ord": {
+            "handler": "cb_add_order",
+            "actions": ["Ask for order name", "Set waiting_for_name state"]
+          },
+          "edit_ord": {
+            "handler": "cb_edit_order",
+            "actions": ["Show orders for editing"]
+          },
+          "sel_ord:{row_index}": {
+            "handler": "cb_select_order",
+            "actions": ["Show order details with edit options"]
+          }
+        },
+        
+        "daily_order_handlers": {
+          "daily_ord_section:{section}": {
+            "handler": "cb_daily_order_section",
+            "actions": [
+              "Get orders for section",
+              "Show orders keyboard"
+            ]
+          },
+          "daily_ord:{row_index}": {
+            "handler": "cb_select_daily_order",
+            "actions": [
+              "Store order in state",
+              "Ask for quantity to add"
+            ]
+          }
+        },
+        
+        "workflow_handlers": {
+          "workflow_bichish": {
+            "handler": "cb_workflow_bichish",
+            "actions": [
+              "Get bichish stage orders",
+              "Show orders keyboard"
+            ]
+          },
+          "workflow_tasnif": {
+            "handler": "cb_workflow_tasnif",
+            "actions": [
+              "Get tasnif stage orders",
+              "Show orders keyboard"
+            ]
+          },
+          "workflow_tikuv": {
+            "handler": "cb_workflow_tikuv",
+            "actions": [
+              "Get tikuv stage orders",
+              "Show orders keyboard"
+            ]
+          },
+          "workflow_qadoqlash": {
+            "handler": "cb_workflow_qadoqlash",
+            "actions": [
+              "Get qadoqlash stage orders",
+              "Show orders keyboard"
+            ]
+          },
+          "workflow_qutiga": {
+            "handler": "cb_workflow_qutiga",
+            "actions": [
+              "Get qutiga stage orders",
+              "Show orders keyboard"
+            ]
+          },
+          "workflow_ord:{row_index}": {
+            "handler": "cb_select_workflow_order",
+            "actions": [
+              "Store workflow order",
+              "Ask for quantity",
+              "Set waiting_for_quantity state"
+            ]
+          },
+          "debug_workflow": {
+            "handler": "cb_debug_workflow",
+            "actions": ["Send debug info about workflow"]
+          }
+        },
+        
+        "admin_edit_handlers": {
+          "edit_sec:{section}:{date}": {
+            "handler": "cb_edit_section_data",
+            "actions": [
+              "Store section and date in state",
+              "Ask for field to edit",
+              "Set waiting_for_field state"
+            ]
+          },
+          "add_new:{date}": {
+            "handler": "cb_add_new_data",
+            "actions": ["Show sections menu for adding new data"]
+          },
+          "delete_date:{date}": {
+            "handler": "cb_delete_date",
+            "actions": ["Ask for confirmation to delete date"]
+          },
+          "confirm_delete:{date}": {
+            "handler": "cb_confirm_delete",
+            "actions": [
+              "Delete row for date",
+              "Send confirmation",
+              "Notify group"
+            ]
+          },
+          "edit_comment:{date}": {
+            "handler": "cb_edit_comment",
+            "actions": [
+              "Store date in state",
+              "Ask for new comment",
+              "Set waiting_for_comment state"
+            ]
+          },
+          "new_sec:{section}:{date}": {
+            "handler": "cb_new_section_data",
+            "actions": ["Similar to edit_sec but for new data"]
+          }
+        },
+        
+        "bulk_edit_handlers": {
+          "bulk_edit:{section}": {
+            "handler": "cb_bulk_edit_section",
+            "actions": [
+              "Store section in state",
+              "Ask for date range",
+              "Set waiting_for_date_range state"
+            ]
+          }
+        },
+        
+        "broadcast_handlers": {
+          "broadcast:{type}": {
+            "handler": "cb_broadcast_type",
+            "actions": [
+              "Store broadcast type",
+              "Process or ask for additional info"
+            ]
+          },
+          "birthday_section:{section}": {
+            "handler": "cb_birthday_section",
+            "actions": [
+              "Store birthday section",
+              "Process birthday broadcast"
+            ]
+          },
+          "cancel_broadcast": {
+            "handler": "cb_cancel_broadcast",
+            "actions": ["Clear broadcast state", "Return to main menu"]
+          },
+          "send_report_again": {
+            "handler": "cb_send_report_again",
+            "actions": ["Call send_report command again"]
+          }
+        }
+      },
+      
+      "state_message_handlers": {
+        "SectionStates": {
+          "ish_soni": {
+            "handler": "process_ish_soni",
+            "actions": [
+              "Parse work quantity",
+              "For tasnif: ask for dikimga",
+              "For others: ask for worker count"
+            ]
+          },
+          "hodim_soni": {
+            "handler": "process_hodim_soni",
+            "actions": [
+              "Parse worker count",
+              "Update sheet",
+              "Update monthly totals",
+              "Send confirmation",
+              "Clear state"
+            ]
+          },
+          "dikimga": {
+            "handler": "process_dikimga",
+            "actions": [
+              "Parse dikimga quantity",
+              "Ask for pechat quantity"
+            ]
+          },
+          "pechat": {
+            "handler": "process_pechat",
+            "actions": [
+              "Parse pechat quantity",
+              "Ask for vishivka quantity"
+            ]
+          },
+          "vishivka": {
+            "handler": "process_vishivka",
+            "actions": [
+              "Parse vishivka quantity",
+              "Ask for worker count",
+              "Set state to hodim_soni"
+            ]
+          },
+          "tikuv_ish": {
+            "handler": "process_tikuv_ish",
+            "actions": [
+              "Parse tikuv work quantity",
+              "Ask for tikuv worker count"
+            ]
+          },
+          "tikuv_hodim": {
+            "handler": "process_tikuv_hodim",
+            "actions": [
+              "Parse tikuv worker count",
+              "Ask for oyoqchi worker count"
+            ]
+          },
+          "oyoqchi_hodim": {
+            "handler": "process_oyoqchi_hodim",
+            "actions": [
+              "Parse oyoqchi worker count",
+              "Update sheet",
+              "Update monthly totals",
+              "Send confirmation",
+              "Clear state"
+            ]
+          },
+          "qadoqlash_ish": {
+            "handler": "process_qadoqlash_ish",
+            "actions": [
+              "Parse qadoqlash work quantity",
+              "Ask for worker count",
+              "Set state to hodim_soni"
+            ]
+          },
+          "comment": {
+            "handler": "process_comment",
+            "actions": [
+              "Parse comment",
+              "Update sheet comment",
+              "Send confirmation",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "OrderStates": {
+          "waiting_for_name": {
+            "handler": "process_order_name",
+            "actions": [
+              "Parse order name",
+              "Ask for quantity",
+              "Set waiting_for_quantity state"
+            ]
+          },
+          "waiting_for_quantity": {
+            "handler": "process_order_quantity",
+            "actions": [
+              "Parse quantity",
+              "Ask for deadline date",
+              "Set waiting_for_deadline state"
+            ]
+          },
+          "waiting_for_deadline": {
+            "handler": "process_order_deadline",
+            "actions": [
+              "Parse deadline",
+              "Ask for section",
+              "Set waiting_for_section state"
+            ]
+          },
+          "waiting_for_section": {
+            "handler": "process_order_section",
+            "actions": [
+              "Parse section",
+              "Validate data",
+              "Add to Google Sheets",
+              "Send confirmation",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "DailyWorkStates": {
+          "waiting_for_section": {
+            "handler": "process_daily_section",
+            "actions": [
+              "Parse section",
+              "Get orders for section",
+              "Show orders keyboard"
+            ]
+          },
+          "waiting_for_order": {
+            "handler": "process_daily_order",
+            "actions": [
+              "Parse order selection",
+              "Ask for quantity",
+              "Set waiting_for_quantity state"
+            ]
+          },
+          "waiting_for_quantity": {
+            "handler": "process_daily_quantity",
+            "actions": [
+              "Parse quantity",
+              "Update order in sheet",
+              "Send confirmation",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "WorkflowStates": {
+          "waiting_for_section": {
+            "handler": "process_workflow_section",
+            "actions": [
+              "Parse workflow section",
+              "Get orders for stage",
+              "Show orders keyboard"
+            ]
+          },
+          "waiting_for_order": {
+            "handler": "process_workflow_order",
+            "actions": [
+              "Parse workflow order selection",
+              "Ask for quantity",
+              "Set waiting_for_quantity state"
+            ]
+          },
+          "waiting_for_quantity": {
+            "handler": "process_workflow_quantity",
+            "actions": [
+              "Parse quantity",
+              "Update workflow order",
+              "Send confirmation",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "AdminEditByDateStates": {
+          "waiting_for_date": {
+            "handler": "process_admin_edit_date",
+            "actions": [
+              "Parse date",
+              "Show data for date",
+              "Store date in state"
+            ]
+          },
+          "waiting_for_field": {
+            "handler": "process_admin_edit_field",
+            "actions": [
+              "Parse field index",
+              "Ask for new value",
+              "Set waiting_for_new_value state"
+            ]
+          },
+          "waiting_for_new_value": {
+            "handler": "process_admin_new_value",
+            "actions": [
+              "Parse new value",
+              "Update sheet",
+              "Send confirmation",
+              "Notify group",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "AdminSectionEditStates": {
+          "waiting_for_date_range": {
+            "handler": "process_bulk_date_range",
+            "actions": [
+              "Parse date range",
+              "Ask for field to edit",
+              "Set waiting_for_field state"
+            ]
+          },
+          "waiting_for_field": {
+            "handler": "process_bulk_field",
+            "actions": [
+              "Parse field index",
+              "Ask for bulk value",
+              "Set waiting_for_bulk_value state"
+            ]
+          },
+          "waiting_for_bulk_value": {
+            "handler": "process_bulk_final_value",
+            "actions": [
+              "Parse bulk value",
+              "Bulk update sheet",
+              "Send confirmation",
+              "Notify group",
+              "Clear state"
+            ]
+          }
+        },
+        
+        "AdminBroadcastStates": {
+          "waiting_for_birthday_name": {
+            "handler": "process_birthday_name",
+            "actions": [
+              "Parse birthday name",
+              "Ask for section",
+              "Show section keyboard"
+            ]
+          }
+        },
+        
+        "AdminEditCommentStates": {
+          "waiting_for_comment": {
+            "handler": "process_admin_comment",
+            "actions": [
+              "Parse comment",
+              "Update sheet comment",
+              "Send confirmation",
+              "Clear state"
+            ]
+          }
+        }
+      },
+      
+      "error_handler": {
+        "handler": "errors_handler",
+        "description": "Global error handler",
+        "parameters": ["update: Update", "exception: Exception"],
+        "actions": [
+          "Log error with traceback",
+          "Return True to prevent bot crash"
+        ]
+      }
+    },
+    
+    "keyboard_functions": {
+      "main_menu": {
+        "function": "main_menu",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["🗓 Кунлик иш (бўлим бўйича)", "daily_work"],
+          ["📋 Кунлик иш (буюртмалар бўйича)", "daily_work_orders"],
+          ["📋 Буюртмалар", "orders_menu"],
+          ["📊 Хисоботлар", "reports_menu"],
+          ["📈 График хисоботлар", "graph_reports"]
+        ]
+      },
+      
+      "reports_menu": {
+        "function": "reports_menu",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["📊 Кунлик хисобот", "r_kun"],
+          ["📅 Хафталик хисобот", "r_haf"],
+          ["🗓 Ойлик хисобот", "r_oy"],
+          ["📋 Буюртмалар хисоботи", "r_ord"],
+          ["🔄 Workflow хисобот", "r_workflow"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "graph_reports_menu": {
+        "function": "graph_reports_menu",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["📊 Ойлик иш графиги", "g_mon"],
+          ["📈 Кунлик иш графиги", "g_day"],
+          ["📅 Ҳафталик тенденция", "g_week"],
+          ["🗓 Ойлик тенденция", "g_month"],
+          ["🥧 Фоизлар диаграммаси", "g_pie"],
+          ["📋 Ишлаб чиқариш дашборди", "production_dashboard"],
+          ["📊 Бичиш визуал хисобот", "vis_bich"],
+          ["📊 Тасниф визуал хисобот", "vis_tasn"],
+          ["📊 Тикув визуал хисобот", "vis_tik"],
+          ["📊 Қадоқлаш визуал хисобот", "vis_qad"],
+          ["🏭 Барча бўлимлар дашборди", "vis_all"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "orders_menu": {
+        "function": "orders_menu",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["📋 Буюртмалар рўйхати", "ord_list"],
+          ["➕ Янги буюртма", "add_ord"],
+          ["✏️ Буюртмани таҳрирлаш", "edit_ord"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "daily_sections_keyboard": {
+        "function": "daily_sections_keyboard",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["✂️ Бичиш", "sec_bich"],
+          ["📑 Тасниф", "sec_tasn"],
+          ["🧵 Тикув", "sec_tik"],
+          ["📦 Қадоқлаш", "sec_qad"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "workflow_sections_keyboard": {
+        "function": "workflow_sections_keyboard",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["✂️ Бичиш", "workflow_bichish"],
+          ["📑 Тасниф", "workflow_tasnif"],
+          ["🧵 Тикув", "workflow_tikuv"],
+          ["📦 Қадоқлаш", "workflow_qadoqlash"],
+          ["📤 Қутига солиш", "workflow_qutiga"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "admin_professional_menu": {
+        "function": "admin_professional_menu",
+        "returns": "InlineKeyboardMarkup",
+        "buttons": [
+          ["📅 Санa бўйича таҳрирлаш", "admin_edit_by_date"],
+          ["✏️ Бўлим маълумотларини таҳрирлаш", "admin_edit_section_data"],
+          ["📦 Буюртмаларни бошқариш", "admin_manage_orders"],
+          ["📊 Ойлик режалар", "admin_monthly_plans"],
+          ["⚙️ Тизим созламалари", "admin_system_settings"],
+          ["📈 Статистика ва хисоботлар", "admin_statistics"],
+          ["🔄 Ботни қайта юклаш", "admin_restart"],
+          ["⬅️ Ортга", "back_main"]
+        ]
+      },
+      
+      "orders_keyboard": {
+        "function": "orders_keyboard",
+        "parameters": ["orders"],
+        "returns": "InlineKeyboardMarkup",
+        "logic": "Create button for each order with callback data"
+      },
+      
+      "orders_keyboard_by_section": {
+        "function": "orders_keyboard_by_section",
+        "parameters": ["orders"],
+        "returns": "InlineKeyboardMarkup",
+        "logic": "Sort orders by deadline, create buttons"
+      },
+      
+      "workflow_orders_keyboard": {
+        "function": "workflow_orders_keyboard",
+        "parameters": ["orders"],
+        "returns": "InlineKeyboardMarkup",
+        "logic": "Create buttons for workflow orders"
+      }
+    },
+    
+    "initialization_code": {
+      "bot_initialization": {
+        "storage": "MemoryStorage()",
+        "bot": "Bot(token=API_TOKEN)",
+        "dispatcher": "Dispatcher(storage=storage)"
+      },
+      
+      "google_sheets_initialization": {
+        "steps": [
+          "Create credentials from service account file",
+          "Authorize gspread client",
+          "Open spreadsheet by ID",
+          "Get or create worksheets",
+          "Set up headers if new sheets"
+        ]
+      },
+      
+      "cache_initialization": {
+        "data_cache": "DataCache(ttl=300)",
+        "sheets_rate_limiter": "RateLimiter(50, 60)"
+      },
+      
+      "workflow_setup": {
+        "function": "update_order_sheet_for_workflow",
+        "actions": [
+          "Check if workflow columns exist",
+          "Add missing headers for workflow stages"
+        ]
+      }
+    },
+    
+    "helper_functions": {
+      "show_date_data": {
+        "description": "Show data for specific date",
+        "parameters": ["message: Message", "date_str: string"],
+        "actions": [
+          "Find row for date",
+          "Format all section data",
+          "Show with edit buttons"
+        ]
+      },
+      
+      "send_to_group": {
+        "description": "Send message to group with topic",
+        "parameters": ["message_text", "topic_id", "parse_mode"],
+        "returns": "boolean (success)",
+        "logic": "Try with topic, fallback without topic"
+      },
+      
+      "get_workflow_stage_orders": {
+        "description": "Get orders for specific workflow stage",
+        "parameters": ["stage_name"],
+        "returns": ["orders (list)"],
+        "logic": "Filter orders by current_stage"
+      },
+      
+      "setup_matplotlib_for_emojis": {
+        "description": "Setup matplotlib for emoji support",
+        "parameters": [],
+        "actions": ["Set font family for emoji compatibility"]
+      },
+      
+      "get_current_settings": {
+        "description": "Get current system settings",
+        "parameters": [],
+        "returns": "dictionary of settings",
+        "logic": "Compile settings from environment and data"
+      }
+    },
+    
+    "global_variables": {
+      "logger": "logging.getLogger(__name__)",
+      "creds": "Credentials.from_service_account_file(GOOGLE_KEY_FILE, scopes=scope)",
+      "gc": "gspread.authorize(creds)",
+      "doc": "gc.open_by_key(SPREADSHEET_ID)",
+      "sheet_report": "doc.worksheet(REPORT_SHEET_NAME)",
+      "sheet_month": "doc.worksheet(REPORT_SHEET_MONTH)",
+      "sheet_orders": "doc.worksheet(ORDERS_SHEET_NAME)",
+      "TZ": "ZoneInfo(TIMEZONE)",
+      "data_cache": "DataCache(ttl=300)",
+      "sheets_rate_limiter": "RateLimiter(50, 60)"
+    }
+  }
+}
