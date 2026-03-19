@@ -12,5 +12,5 @@ asyncpg==0.28.0
 Pillow==10.0.0
 requests==2.31.0
 urllib3==1.26.16
-setuptools==68.0.0  # Add this
-wheel==0.40.0       # Add this
+setuptools==68.0.0
+wheel==0.40.0
